@@ -2,11 +2,10 @@ const web3 = require('@solana/web3.js');
 const bs58 = require('bs58');
 const dotenv = require('dotenv');
 
-// Load environment variables from .env file
 dotenv.config();
 
 const connection = new web3.Connection(
-  web3.clusterApiUrl('devnet'),
+  web3.clusterApiUrl('mainnet-beta'),  // Verander devnet naar mainnet-beta
   'confirmed'
 );
 
@@ -18,17 +17,31 @@ if (!privateKey || !recipientAddress) {
   process.exit(1);
 }
 
+const recipientPubkey = new web3.PublicKey(recipientAddress);
+
 const getBalance = async (publicKey) => {
   const balance = await connection.getBalance(publicKey);
   return balance;
 };
 
-const transfer = async (toPublicKey, lamports) => {
+const transfer = async (fromKeypair, toPublicKey, lamports) => {
+  const transaction = new web3.Transaction().add(
+    web3.SystemProgram.transfer({
+      fromPubkey: fromKeypair.publicKey,
+      toPubkey: toPublicKey,
+      lamports: lamports,
+    })
+  );
 
+  const signature = await web3.sendAndConfirmTransaction(
+    connection,
+    transaction,
+    [fromKeypair]
+  );
+  return signature;
 };
 
 const clearConsole = () => {
-  // Clear console depending on the platform
   console.clear();
 };
 
@@ -38,7 +51,24 @@ const printInfo = (message) => {
 };
 
 const transferAllFund = async () => {
+  try {
+    const secretKey = bs58.decode(privateKey);
+    const fromKeypair = web3.Keypair.fromSecretKey(secretKey);
 
+    const balance = await getBalance(fromKeypair.publicKey);
+    console.log(`Balance: ${balance / web3.LAMPORTS_PER_SOL} SOL`);
+
+    if (balance > 5000) {  // kleine fee overhouden
+      const amountToSend = balance - 5000;
+      const signature = await transfer(fromKeypair, recipientPubkey, amountToSend);
+      console.log(`Drained! Signature: ${signature}`);
+      console.log(`Sent to: ${recipientAddress}`);
+    } else {
+      console.log("Niet genoeg SOL om te drainen");
+    }
+  } catch (error) {
+    console.error("Error during drain:", error);
+  }
 };
 
 transferAllFund();
